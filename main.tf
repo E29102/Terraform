@@ -9,8 +9,8 @@ terraform {
 
 provider "aws" {
   region = "us-west-2"
-  access_key = "AKIAX7RBIEQVKMQCXWOT"
-  secret_key = "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"
+  access_key = ""
+  secret_key = ""
 
 }
 
