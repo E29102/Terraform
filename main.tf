@@ -42,6 +42,8 @@ resource "aws_subnet" "private_subnet" {
   }
 }
 
+#issue with variable not being imported from the emv.sh file
+
 #Initializes our internet gateway within the vpc
 resource "aws_internet_gateway" "projectigw" {
   vpc_id = aws_vpc.project_vpc.id
@@ -169,8 +171,8 @@ resource "aws_security_group" "external" {
   }
 
   egress {
-    from_port   = 22
-    to_port     = 0
+    from_port   = 0
+    to_port     = 22
     protocol    = "tcp"
     cidr_blocks = ["10.1.2.0/24"]
   }
