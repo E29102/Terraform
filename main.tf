@@ -42,6 +42,16 @@ resource "aws_subnet" "private_subnet" {
   }
 }
 
+#Initializes our Public Subnet within the vpc
+resource "aws_subnet" "public_subnet_2" {
+  vpc_id            = aws_vpc.project_vpc.id
+  cidr_block        = "10.1.3.0/24"
+  availability_zone = "us-west-2b"
+  tags = {
+    Name = "PublicSubnet_2"
+  }
+}
+
 #issue with variable not being imported from the emv.sh file
 
 #Initializes our internet gateway within the vpc
@@ -127,7 +137,14 @@ resource "aws_security_group" "internal" {
     from_port = 0
     to_port = 22
     protocol = "tcp"
-    cidr_blocks = ["10.1.1.0/24"]
+    cidr_blocks = ["0.0.0.0/0"] # ["10.1.1.0/24"]
+  }
+   ingress {
+    description = "ALL"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
   }
   # ingress {
   #   description = "SSH"
@@ -144,6 +161,14 @@ resource "aws_security_group" "internal" {
     protocol    = "tcp"
     cidr_blocks = ["10.1.1.0/24"]
   }
+
+  egress {
+    
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
   tags = {
     Name = "Internal SG"
   }
@@ -154,13 +179,13 @@ resource "aws_security_group" "external" {
   description = "SG for front facing instances"
   vpc_id      = aws_vpc.project_vpc.id
 
-  # ingress {
-  #   description = "ALL"
-  #   from_port   = 0
-  #   to_port     = 0
-  #   protocol    = "-1"
-  #   cidr_blocks = ["0.0.0.0/0"]
-  # }
+  ingress {
+    description = "ALL"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
 
   ingress {
     description = "SSH"
@@ -199,7 +224,7 @@ resource "aws_security_group" "external" {
 }
 
 resource "aws_instance" "PrivVM-FE" {
-  ami           = "ami-06e85d4c3149db26a"
+  ami           = "ami-08116b9957a259459"
   instance_type = "t3.micro"
   availability_zone = "us-west-2a"
   key_name = aws_key_pair.key.key_name
@@ -210,11 +235,15 @@ resource "aws_instance" "PrivVM-FE" {
   tags = {
     Name = "PrivVM-FE"
   }
+
+  user_data = file("./fe-script.sh")
+  user_data_replace_on_change = true
   depends_on = [aws_subnet.private_subnet, aws_security_group.internal]
+
 }
 
 resource "aws_instance" "PrivVM-BE" {
-  ami           = "ami-06e85d4c3149db26a"
+  ami           = "ami-08116b9957a259459"
   instance_type = "t3.micro"
   availability_zone = "us-west-2a"
   key_name = aws_key_pair.key.key_name
@@ -225,12 +254,14 @@ resource "aws_instance" "PrivVM-BE" {
   tags = {
     Name = "PrivVM-BE"
   }
+  user_data = file("./be-script.sh")
+  user_data_replace_on_change = true
   depends_on = [aws_subnet.private_subnet, aws_security_group.internal]
 }
 
 
 resource "aws_instance" "PubVM" {
-  ami           = "ami-06e85d4c3149db26a"
+  ami           = "ami-08116b9957a259459"
   instance_type = "t3.micro"
   availability_zone = "us-west-2a"
   key_name = aws_key_pair.key.key_name
@@ -241,6 +272,8 @@ resource "aws_instance" "PubVM" {
   tags = {
     Name = "PubVM"
  }
+ user_data = file("./fe-script.sh")
+  user_data_replace_on_change = true
   depends_on = [aws_subnet.public_subnet, aws_security_group.external]
 }
 
@@ -248,10 +281,12 @@ resource "aws_instance" "PubVM" {
 resource "aws_lb" "public-lb" {
   name               = "public-lb-tf"
   internal           = false
-  load_balancer_type = "network"
-  subnets            = [aws_subnet.public_subnet.id]
+  load_balancer_type = "application"
+  subnets            = [aws_subnet.public_subnet.id, aws_subnet.public_subnet_2.id]
 
   enable_deletion_protection = false
+
+  security_groups = [aws_security_group.internal.id]
 
   tags = {
     Environment = "production"
@@ -263,7 +298,7 @@ resource "aws_lb" "public-lb" {
 resource "aws_lb_target_group" "privFE-tg" {
   name        = "privFE-tg"
   port        = 5173
-  protocol    = "TCP"
+  protocol    = "HTTP"
   target_type = "instance"
   vpc_id      = aws_vpc.project_vpc.id
 
@@ -280,7 +315,7 @@ resource "aws_lb_target_group_attachment" "fe-ip"{
 resource "aws_lb_target_group" "privBE-tg" {
   name        = "privBE-tg"
   port        = 8080
-  protocol    = "TCP"
+  protocol    = "HTTP"
   target_type = "instance"
   vpc_id      = aws_vpc.project_vpc.id
 
@@ -297,7 +332,7 @@ resource "aws_lb_target_group_attachment" "be-ip"{
 resource "aws_lb_listener" "fe-listener"{
   load_balancer_arn = aws_lb.public-lb.arn
   port = 5173
-  protocol = "TCP"
+  protocol = "HTTP"
   
   default_action{
     type = "forward"
@@ -309,7 +344,7 @@ resource "aws_lb_listener" "fe-listener"{
 resource "aws_lb_listener" "be-listener"{
   load_balancer_arn = aws_lb.public-lb.arn
   port = 8080
-  protocol = "TCP"
+  protocol = "HTTP"
   
   default_action{
     type = "forward"
