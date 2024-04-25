@@ -9,8 +9,8 @@ terraform {
 
 provider "aws" {
   region = "us-west-2"
-  access_key = ""
-  secret_key = ""
+  access_key = 
+  secret_key = 
 
 }
 
@@ -193,8 +193,6 @@ resource "aws_security_group" "external" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-
-
   tags = {
     Name = "External SG"
   }
@@ -245,6 +243,81 @@ resource "aws_instance" "PubVM" {
  }
   depends_on = [aws_subnet.public_subnet, aws_security_group.external]
 }
+
+#Load balancer
+resource "aws_lb" "public-lb" {
+  name               = "public-lb-tf"
+  internal           = false
+  load_balancer_type = "network"
+  subnets            = [aws_subnet.public_subnet.id]
+
+  enable_deletion_protection = false
+
+  tags = {
+    Environment = "production"
+  }
+}
+
+#Target Groups for load balancer
+#Front End
+resource "aws_lb_target_group" "privFE-tg" {
+  name        = "privFE-tg"
+  port        = 5173
+  protocol    = "TCP"
+  target_type = "instance"
+  vpc_id      = aws_vpc.project_vpc.id
+
+}
+
+resource "aws_lb_target_group_attachment" "fe-ip"{
+  target_group_arn = aws_lb_target_group.privFE-tg.arn
+  target_id = aws_instance.PrivVM-FE.id
+  port = 5173
+}
+
+
+#BackEnd
+resource "aws_lb_target_group" "privBE-tg" {
+  name        = "privBE-tg"
+  port        = 8080
+  protocol    = "TCP"
+  target_type = "instance"
+  vpc_id      = aws_vpc.project_vpc.id
+
+}
+
+resource "aws_lb_target_group_attachment" "be-ip"{
+  target_group_arn = aws_lb_target_group.privBE-tg.arn
+  target_id = aws_instance.PrivVM-BE.id
+  port = 8080
+}
+
+#Listeners
+#Front End
+resource "aws_lb_listener" "fe-listener"{
+  load_balancer_arn = aws_lb.public-lb.arn
+  port = 5173
+  protocol = "TCP"
+  
+  default_action{
+    type = "forward"
+    target_group_arn = aws_lb_target_group.privFE-tg.arn
+  }
+}
+
+#Back End
+resource "aws_lb_listener" "be-listener"{
+  load_balancer_arn = aws_lb.public-lb.arn
+  port = 8080
+  protocol = "TCP"
+  
+  default_action{
+    type = "forward"
+    target_group_arn = aws_lb_target_group.privBE-tg.arn
+  }
+}
+
+
 
 resource "aws_key_pair" "key"{
   public_key = file("./project_key.pub")
